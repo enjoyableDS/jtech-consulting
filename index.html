@@ -4,14 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>제이텍 단열탄성 고객상담 카탈로그</title>
-    <!-- 외부 manifest.json 연동 (PWA 정식 요건) -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1d4ed8">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; }
         body { background-color: #f8fafc; color: #1e293b; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        /* 요청하신 헤더 레이아웃: 좌측 로고 / 중앙 타이틀 / 우측 관리자 버튼 */
         header { 
             background: #ffffff; 
             border-bottom: 2px solid #cbd5e1; 
@@ -57,7 +55,6 @@
         }
         .admin-btn:hover { background: #1e40af; }
         
-        /* 10개 카테고리 그리드 레이아웃 */
         main { 
             flex: 1; 
             padding: 24px; 
@@ -83,7 +80,6 @@
         .category-card:active { transform: scale(0.96); background: #eff6ff; }
         .category-title { font-size: 22px; font-weight: bold; color: #1e293b; }
 
-        /* 모달 및 뷰어 */
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
         .modal-content { background: white; width: 90%; height: 88%; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
         .modal-header { padding: 16px 24px; background: #1d4ed8; color: white; display: flex; justify-content: space-between; align-items: center; font-size: 20px; font-weight: bold; }
@@ -97,7 +93,6 @@
         .upload-box { border: 3px dashed #94a3b8; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; aspect-ratio: 1; cursor: pointer; background: #f8fafc; color: #64748b; font-weight: bold; }
         .upload-box:hover { background: #f1f5f9; border-color: #1d4ed8; color: #1d4ed8; }
 
-        /* 전체화면 미디어 플레이어 */
         .fullscreen-viewer { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: black; z-index: 2000; justify-content: center; align-items: center; }
         .viewer-close { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); color: white; border: none; font-size: 32px; width: 54px; height: 54px; border-radius: 50%; cursor: pointer; z-index: 2010; }
         .nav-arrow { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.2); color: white; border: none; font-size: 40px; padding: 20px; cursor: pointer; z-index: 2010; border-radius: 8px; }
@@ -117,7 +112,6 @@
 
     <main id="categoryGrid"></main>
 
-    <!-- 카테고리별 미디어 관리 모달 -->
     <div id="mediaModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -128,7 +122,6 @@
         </div>
     </div>
 
-    <!-- 전체 화면 미디어 뷰어 -->
     <div id="fullscreenViewer" class="fullscreen-viewer">
         <button class="viewer-close" onclick="closeFullscreen()">&times;</button>
         <button class="nav-arrow nav-prev" onclick="moveMedia(-1)">&#10094;</button>
@@ -139,12 +132,9 @@
     <input type="file" id="fileInput" style="display:none" accept="image/*,video/*" multiple onchange="handleFiles(event)">
 
     <script>
-        // PWA Service Worker 정식 등록 (sw.js 연동)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('Service Worker 등록 성공:', reg.scope))
-                    .catch(err => console.log('Service Worker 등록 실패:', err));
+                navigator.serviceWorker.register('sw.js').catch(() => {});
             });
         }
 
@@ -155,7 +145,6 @@
         let currentMediaItems = [];
         let currentViewerIndex = 0;
 
-        // IndexedDB 로컬 저장소 초기화
         const request = indexedDB.open("JTechConsultingDB", 1);
         request.onerror = () => alert("데이터베이스를 열 수 없습니다.");
         request.onsuccess = (e) => {
@@ -173,18 +162,26 @@
         };
 
         function loadCategories() {
-            const transaction = db.transaction(["categories"], "readonly");
+            const transaction = db.transaction(["categories"], "readwrite");
             const store = transaction.objectStore("categories");
             const req = store.getAll();
             req.onsuccess = () => {
                 if (req.result.length > 0) {
                     categories = req.result.map(item => item.name);
+                    renderCategories();
                 } else {
-                    const initTx = db.transaction(["categories"], "readwrite");
-                    const initStore = initTx.objectStore("categories");
-                    defaultCategories.forEach(cat => initStore.put({ name: cat }));
+                    let count = 0;
+                    defaultCategories.forEach(cat => {
+                        const addReq = store.put({ name: cat });
+                        addReq.onsuccess = () => {
+                            count++;
+                            if (count === defaultCategories.length) {
+                                categories = [...defaultCategories];
+                                renderCategories();
+                            }
+                        };
+                    });
                 }
-                renderCategories();
             };
         }
 
@@ -329,3 +326,22 @@
             } else {
                 const img = document.createElement("img");
                 img.src = blobUrl;
+                img.style.maxWidth = "100%";
+                img.style.maxHeight = "100%";
+                img.style.objectFit = "contain";
+                container.appendChild(img);
+            }
+        }
+
+        function moveMedia(direction) {
+            currentViewerIndex += direction;
+            if (currentViewerIndex < 0) {
+                currentViewerIndex = currentMediaItems.length - 1;
+            } else if (currentViewerIndex >= currentMediaItems.length) {
+                currentViewerIndex = 0;
+            }
+            renderFullscreenMedia();
+        }
+    </script>
+</body>
+</html>
