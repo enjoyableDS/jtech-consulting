@@ -1,8 +1,8 @@
-const CACHE_NAME = 'jtech-v4'; // 버전 번호 변경 (기존 캐시 무효화)
+const CACHE_NAME = 'jtech-v4';
 const urlsToCache = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // 새 서비스 워커 즉시 활성화
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(urlsToCache);
@@ -10,7 +10,6 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// 이전 버전(v1, v2) 캐시 자동 삭제
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -25,7 +24,6 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 네트워크 우선 확인 후 오프라인 시 캐시 반환 (업데이트 미반영 문제 방지)
 self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request)
