@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jtech-v3'; // 버전 번호 변경 (기존 캐시 무효화)
+const CACHE_NAME = 'jtech-v4'; // 버전 번호 변경 (기존 캐시 무효화)
 const urlsToCache = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
