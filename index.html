@@ -35,13 +35,26 @@
       -webkit-user-select: none;
       touch-action: manipulation;
     }
+    /* 모바일/태블릿 터치 스와이프 스크롤 및 스크롤바 시인성 강화 */
+    .custom-scrollbar {
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      overscroll-behavior-y: contain;
+    }
     .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 8px;
+      height: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background-color: #f1f5f9;
+      border-radius: 9999px;
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background-color: #cbd5e1;
+      background-color: #94a3b8;
       border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background-color: #64748b;
     }
     /* Fullscreen media object fit handling */
     .media-fit-contain {
@@ -52,7 +65,7 @@
     }
   </style>
 </head>
-<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col overflow-hidden">
+<body class="bg-gray-50 text-gray-800 h-screen h-[100dvh] flex flex-col overflow-hidden">
 
   <!-- TOP HEADER -->
   <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
@@ -82,17 +95,17 @@
   </header>
 
   <!-- MAIN VIEW CONTAINER -->
-  <main class="flex-1 relative overflow-y-auto custom-scrollbar p-6">
+  <main class="flex-1 min-h-0 relative overflow-y-auto custom-scrollbar p-6">
 
     <!-- 1. CATEGORY GRID VIEW (MAIN HOME) -->
-    <div id="view-categories" class="max-w-7xl mx-auto h-full flex flex-col justify-center">
+    <div id="view-categories" class="max-w-7xl mx-auto min-h-full py-2 pb-10 flex flex-col justify-center">
       <div id="category-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5 my-auto">
         <!-- Dynamically rendered Category Cards -->
       </div>
     </div>
 
     <!-- 2. MEDIA GALLERY GRID VIEW (INSIDE CATEGORY) -->
-    <div id="view-gallery" class="hidden max-w-7xl mx-auto">
+    <div id="view-gallery" class="hidden max-w-7xl mx-auto pb-12">
       <div class="flex items-center justify-between mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
         <div>
           <h2 id="current-category-name" class="text-2xl font-bold text-brand">시공전</h2>
