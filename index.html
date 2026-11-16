@@ -57,6 +57,14 @@
     .custom-scrollbar::-webkit-scrollbar-thumb:hover {
       background-color: #64748b;
     }
+    /* 상단 카테고리 바 가로 스크롤 숨김 처리 (깔끔한 UI 유지) */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
     .media-fit-contain {
       object-fit: contain;
     }
@@ -68,7 +76,8 @@
 <body class="bg-gray-50 text-gray-800 h-screen h-[100dvh] flex flex-col overflow-hidden">
 
   <!-- TOP HEADER -->
-  <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm shrink-0 z-10">
+  <header class="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between shadow-sm shrink-0 z-20">
+    <!-- 좌측 로고 -->
     <div class="flex items-center gap-3">
       <div class="flex flex-col items-center justify-center border-2 border-brand px-4 py-1.5 rounded-md cursor-pointer" onclick="goHome()">
         <span class="text-2xl font-black tracking-wider text-brand leading-none">JTECH</span>
@@ -77,12 +86,13 @@
       </div>
     </div>
 
-    <div id="header-title" class="text-xl font-bold text-brand flex items-center gap-2">
-      <span>고객 상담 카탈로그</span>
-    </div>
+    <!-- 우측 영역: 현재 카테고리 경로(우측 이동) + 컨트롤 버튼 -->
+    <div class="flex items-center gap-3 flex-wrap justify-end">
+      <div id="header-title" class="text-base sm:text-lg font-bold text-brand flex items-center gap-1.5 mr-1">
+        <span>고객 상담 카탈로그</span>
+      </div>
 
-    <div class="flex items-center gap-3">
-      <button onclick="goHome()" id="btn-home" class="hidden px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-brand font-bold flex items-center gap-2 text-sm transition">
+      <button onclick="goHome()" id="btn-home" class="hidden px-3.5 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-brand font-bold flex items-center gap-1.5 text-sm transition">
         <i class="fa-solid fa-house"></i> 메인으로
       </button>
       <button onclick="toggleAdminModal(true)" class="px-4 py-2 bg-brand hover:bg-brandDark text-white rounded-lg font-bold flex items-center gap-2 text-sm shadow transition">
@@ -90,6 +100,13 @@
       </button>
     </div>
   </header>
+
+  <!-- PERSISTENT TOP CATEGORY BAR (항시 노출되는 카테고리 메뉴 바) -->
+  <nav class="bg-white border-b border-gray-200 px-6 py-2.5 shrink-0 z-10 shadow-xs">
+    <div id="top-category-bar" class="max-w-7xl mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar">
+      <!-- JavaScript로 카테고리 버튼 동적 렌더링 -->
+    </div>
+  </nav>
 
   <!-- MAIN VIEW CONTAINER -->
   <main class="flex-1 min-h-0 relative overflow-y-auto custom-scrollbar p-6">
@@ -396,6 +413,43 @@
       });
     }
 
+    /* 상단 항시 노출 카테고리 네비게이션 렌더링 */
+    function renderTopCategoryBar() {
+      const bar = document.getElementById("top-category-bar");
+      if (!bar) return;
+      bar.innerHTML = "";
+
+      // 전체(홈) 버튼
+      const isHome = currentCategoryId === null && !document.getElementById("view-categories").classList.contains("hidden");
+      const homeBtn = document.createElement("button");
+      homeBtn.className = `px-3.5 py-1.5 rounded-full text-xs font-bold shrink-0 transition cursor-pointer ${
+        isHome
+          ? "bg-brand text-white shadow-sm"
+          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+      }`;
+      homeBtn.innerHTML = `<i class="fa-solid fa-border-all mr-1"></i> 전체`;
+      homeBtn.onclick = () => goHome();
+      bar.appendChild(homeBtn);
+
+      // 등록된 카테고리 버튼 목록
+      categories.forEach(cat => {
+        const isActive = cat.id === currentCategoryId && !document.getElementById("view-gallery").classList.contains("hidden");
+        const count = (mediaStorage[cat.id] || []).length;
+        const btn = document.createElement("button");
+        btn.className = `px-3.5 py-1.5 rounded-full text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
+          isActive
+            ? "bg-brand text-white shadow-sm"
+            : "bg-brandLight/60 text-brand hover:bg-brandLight border border-brand/15"
+        }`;
+        btn.onclick = () => openCategory(cat.id);
+        btn.innerHTML = `
+          <span>${cat.name}</span>
+          ${count > 0 ? `<span class="text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-white/25 text-white' : 'bg-brand/10 text-brand'}">${count}</span>` : ''}
+        `;
+        bar.appendChild(btn);
+      });
+    }
+
     function renderCategoryGrid() {
       const grid = document.getElementById("category-grid");
       grid.innerHTML = "";
@@ -423,6 +477,8 @@
       document.getElementById("view-gallery").classList.add("hidden");
       document.getElementById("btn-home").classList.add("hidden");
       document.getElementById("header-title").innerHTML = `<span>고객 상담 카탈로그</span>`;
+      
+      renderTopCategoryBar();
     }
 
     function openCategory(catId) {
@@ -435,7 +491,7 @@
 
       document.getElementById("current-category-name").innerText = category.name;
       document.getElementById("current-category-count").innerText = `총 ${items.length}개의 미디어 파일`;
-      document.getElementById("header-title").innerHTML = `<span class="text-gray-400">카테고리 &gt;</span> <span class="text-brand">${category.name}</span>`;
+      document.getElementById("header-title").innerHTML = `<span class="text-gray-400 text-sm sm:text-base">카테고리 &gt;</span> <span class="text-brand">${category.name}</span>`;
 
       const galleryGrid = document.getElementById("gallery-grid");
       const emptyState = document.getElementById("gallery-empty");
@@ -484,6 +540,8 @@
       document.getElementById("view-categories").classList.add("hidden");
       document.getElementById("view-gallery").classList.remove("hidden");
       document.getElementById("btn-home").classList.remove("hidden");
+      
+      renderTopCategoryBar();
     }
 
     function goHome() {
@@ -585,10 +643,11 @@
         modal.classList.remove("hidden");
       } else {
         modal.classList.add("hidden");
-        if (currentCategoryId) {
+        renderTopCategoryBar();
+        if (currentCategoryId && !document.getElementById("view-gallery").classList.contains("hidden")) {
           openCategory(currentCategoryId);
         } else {
-          renderCategoryGrid();
+          goHome();
         }
       }
     }
@@ -669,6 +728,7 @@
           await deleteMediaItemFromDB(item.id);
           mediaStorage[currentCategoryId] = mediaStorage[currentCategoryId].filter(m => m.id !== item.id);
           renderAdminCategories();
+          renderTopCategoryBar();
         };
 
         itemCard.appendChild(delBtn);
@@ -718,6 +778,7 @@
       }
 
       renderAdminCategories();
+      renderTopCategoryBar();
       event.target.value = "";
     }
 
@@ -734,6 +795,7 @@
         await saveAllCategories();
         currentCategoryId = newCat.id;
         renderAdminCategories();
+        renderTopCategoryBar();
       }
     }
 
@@ -745,6 +807,7 @@
         category.name = newName.trim();
         await saveAllCategories();
         renderAdminCategories();
+        renderTopCategoryBar();
       }
     }
 
@@ -760,6 +823,7 @@
         await saveAllCategories();
         currentCategoryId = categories.length > 0 ? categories[0].id : null;
         renderAdminCategories();
+        renderTopCategoryBar();
       }
     }
 
