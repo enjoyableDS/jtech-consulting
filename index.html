@@ -68,27 +68,34 @@
 <body class="bg-gray-50 text-gray-800 h-screen h-[100dvh] flex flex-col overflow-hidden">
 
   <!-- TOP HEADER -->
-  <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm shrink-0 z-10">
-    <div class="flex items-center gap-3">
-      <div class="flex flex-col items-center justify-center border-2 border-brand px-4 py-1.5 rounded-md cursor-pointer" onclick="goHome()">
-        <span class="text-2xl font-black tracking-wider text-brand leading-none">JTECH</span>
-        <span class="text-[10px] font-bold text-gray-500 tracking-tighter mt-0.5">SINCE 2010</span>
-        <span class="text-[11px] font-extrabold text-brand tracking-widest leading-none mt-0.5">단열탄성 제이텍</span>
+  <header class="bg-white border-b border-gray-200 px-6 py-4 flex flex-col gap-3 shadow-sm shrink-0 z-10">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="flex flex-col items-center justify-center border-2 border-brand px-4 py-1.5 rounded-md cursor-pointer" onclick="goHome()">
+          <span class="text-2xl font-black tracking-wider text-brand leading-none">JTECH</span>
+          <span class="text-[10px] font-bold text-gray-500 tracking-tighter mt-0.5">SINCE 2010</span>
+          <span class="text-[11px] font-extrabold text-brand tracking-widest leading-none mt-0.5">단열탄성 제이텍</span>
+        </div>
+      </div>
+
+      <div id="header-title" class="text-xl font-bold text-brand flex items-center gap-2">
+        <span>고객 상담 카탈로그</span>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button onclick="goHome()" id="btn-home" class="hidden px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-brand font-bold flex items-center gap-2 text-sm transition">
+          <i class="fa-solid fa-house"></i> 메인으로
+        </button>
+        <button onclick="toggleAdminModal(true)" class="px-4 py-2 bg-brand hover:bg-brandDark text-white rounded-lg font-bold flex items-center gap-2 text-sm shadow transition">
+          <i class="fa-solid fa-gear"></i> 항목/미디어 관리
+        </button>
       </div>
     </div>
 
-    <div id="header-title" class="text-xl font-bold text-brand flex items-center gap-2">
-      <span>고객 상담 카탈로그</span>
-    </div>
-
-    <div class="flex items-center gap-3">
-      <button onclick="goHome()" id="btn-home" class="hidden px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-brand font-bold flex items-center gap-2 text-sm transition">
-        <i class="fa-solid fa-house"></i> 메인으로
-      </button>
-      <button onclick="toggleAdminModal(true)" class="px-4 py-2 bg-brand hover:bg-brandDark text-white rounded-lg font-bold flex items-center gap-2 text-sm shadow transition">
-        <i class="fa-solid fa-gear"></i> 항목/미디어 관리
-      </button>
-    </div>
+    <!-- TOP CATEGORY MENU BAR -->
+    <nav id="top-category-bar" class="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 pt-1 border-t border-gray-100">
+      <!-- 동적으로 카테고리 칩 버튼들이 생성됩니다 -->
+    </nav>
   </header>
 
   <!-- MAIN VIEW CONTAINER -->
@@ -364,6 +371,7 @@
             }
           });
           renderCategoryGrid();
+          renderTopCategoryBar();
         };
       };
     }
@@ -396,7 +404,31 @@
       });
     }
 
+    function renderTopCategoryBar() {
+      const topBar = document.getElementById("top-category-bar");
+      topBar.innerHTML = "";
+
+      categories.forEach(cat => {
+        const isSelected = currentCategoryId === cat.id;
+        const btn = document.createElement("button");
+        btn.className = `whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
+          isSelected 
+            ? 'bg-brand text-white shadow-sm' 
+            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+        }`;
+        btn.onclick = () => openCategory(cat.id);
+        
+        const count = (mediaStorage[cat.id] || []).length;
+        btn.innerHTML = `
+          <span>${cat.name}</span>
+          <span class="text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'}">${count}</span>
+        `;
+        topBar.appendChild(btn);
+      });
+    }
+
     function renderCategoryGrid() {
+      renderTopCategoryBar();
       const grid = document.getElementById("category-grid");
       grid.innerHTML = "";
 
@@ -427,6 +459,7 @@
 
     function openCategory(catId) {
       currentCategoryId = catId;
+      renderTopCategoryBar();
       const category = categories.find(c => c.id === catId);
       if (!category) return;
 
@@ -669,6 +702,7 @@
           await deleteMediaItemFromDB(item.id);
           mediaStorage[currentCategoryId] = mediaStorage[currentCategoryId].filter(m => m.id !== item.id);
           renderAdminCategories();
+          renderTopCategoryBar();
         };
 
         itemCard.appendChild(delBtn);
@@ -718,6 +752,7 @@
       }
 
       renderAdminCategories();
+      renderTopCategoryBar();
       event.target.value = "";
     }
 
@@ -734,6 +769,7 @@
         await saveAllCategories();
         currentCategoryId = newCat.id;
         renderAdminCategories();
+        renderTopCategoryBar();
       }
     }
 
@@ -745,6 +781,7 @@
         category.name = newName.trim();
         await saveAllCategories();
         renderAdminCategories();
+        renderTopCategoryBar();
       }
     }
 
@@ -760,6 +797,7 @@
         await saveAllCategories();
         currentCategoryId = categories.length > 0 ? categories[0].id : null;
         renderAdminCategories();
+        renderTopCategoryBar();
       }
     }
 
