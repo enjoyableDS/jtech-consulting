@@ -133,11 +133,14 @@
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; user-select: none; -webkit-user-select: none; }
-    .custom-scrollbar {-webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior-y: contain;}
-    .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+    
+    /* 모바일 터치 및 가로 스크롤 최적화 수정 */
+    .custom-scrollbar {-webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; overscroll-behavior-x: contain;}
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 9999px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #94a3b8; border-radius: 9999px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 9999px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+    
     .media-fit-contain { object-fit: contain; }
     .media-fit-cover { object-fit: cover; }
   </style>
@@ -169,8 +172,8 @@
       </div>
     </div>
 
-    <!-- TOP CATEGORY MENU BAR -->
-    <nav id="top-category-bar" class="flex items-center justify-center gap-2 overflow-x-auto custom-scrollbar pb-1 pt-1 border-t border-gray-100">
+    <!-- TOP CATEGORY MENU BAR (수정: justify-start 및 양옆 여백 추가하여 끝까지 스크롤 유도) -->
+    <nav id="top-category-bar" class="flex items-center justify-start gap-2 overflow-x-auto custom-scrollbar pb-2 pt-1 border-t border-gray-100 w-full whitespace-nowrap px-1">
     </nav>
   </header>
 
@@ -343,7 +346,7 @@
       window.categories.forEach(cat => {
         const isSelected = window.currentCategoryId === cat.id;
         const btn = document.createElement("button");
-        btn.className = `whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${isSelected ? 'bg-brand text-white shadow-sm' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`;
+        btn.className = `whitespace-nowrap px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${isSelected ? 'bg-brand text-white shadow-sm' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`;
         btn.onclick = () => openCategory(cat.id);
         const count = (window.mediaStorage[cat.id] || []).length;
         btn.innerHTML = `<span>${cat.name}</span><span class="text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'}">${count}</span>`;
