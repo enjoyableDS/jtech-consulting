@@ -45,7 +45,6 @@
 
     // 실시간 데이터 동기화 리스너 설정
     window.initFirebaseSync = async function() {
-      // 최초 접속 시 카테고리가 아예 없는지 확인 후 기본값 생성 (중복 생성 방지)
       const catSnapshot = await getDocs(collection(db, "categories"));
       if (catSnapshot.empty) {
         for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
@@ -134,7 +133,7 @@
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; user-select: none; -webkit-user-select: none; }
     
-    /* 모바일 터치 및 가로 스크롤 최적화 수정 */
+    /* 모바일 터치 및 가로 스크롤 최적화 */
     .custom-scrollbar {-webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; overscroll-behavior-x: contain;}
     .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 9999px; }
@@ -172,8 +171,9 @@
       </div>
     </div>
 
-    <!-- TOP CATEGORY MENU BAR (수정: justify-start 및 양옆 여백 추가하여 끝까지 스크롤 유도) -->
-    <nav id="top-category-bar" class="flex items-center justify-start gap-2 overflow-x-auto custom-scrollbar pb-2 pt-1 border-t border-gray-100 w-full whitespace-nowrap px-1">
+    <!-- TOP CATEGORY MENU BAR (PC 중앙정렬 및 모바일 가로 스크롤 구조) -->
+    <nav id="top-category-bar" class="overflow-x-auto custom-scrollbar pb-2 pt-1 border-t border-gray-100 w-full whitespace-nowrap px-1">
+      <div id="top-category-inner" class="flex items-center justify-start sm:justify-center gap-2 min-w-max mx-auto"></div>
     </nav>
   </header>
 
@@ -339,9 +339,9 @@
     }
 
     function renderTopCategoryBar() {
-      const topBar = document.getElementById("top-category-bar");
-      if (!topBar) return;
-      topBar.innerHTML = "";
+      const topBarInner = document.getElementById("top-category-inner");
+      if (!topBarInner) return;
+      topBarInner.innerHTML = "";
 
       window.categories.forEach(cat => {
         const isSelected = window.currentCategoryId === cat.id;
@@ -350,7 +350,7 @@
         btn.onclick = () => openCategory(cat.id);
         const count = (window.mediaStorage[cat.id] || []).length;
         btn.innerHTML = `<span>${cat.name}</span><span class="text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'}">${count}</span>`;
-        topBar.appendChild(btn);
+        topBarInner.appendChild(btn);
       });
     }
 
@@ -537,7 +537,6 @@
       });
     }
 
-    // 이미지 용량 초과 방지를 위한 압축 리사이징 함수
     function compressImage(file, maxWidth = 1024, quality = 0.7) {
       return new Promise((resolve) => {
         if (!file.type.startsWith("image/")) {
@@ -579,7 +578,7 @@
       const baseTime = Date.now();
       for (let i = 0; i < validFiles.length; i++) {
         const file = validFiles[i];
-        const dataUrl = await compressImage(file); // 압축 적용
+        const dataUrl = await compressImage(file);
         const mediaId = "media_" + baseTime + "_" + i + "_" + Math.random().toString(36).substr(2, 5);
         const mediaObj = {
           categoryId: window.currentCategoryId,
