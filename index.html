@@ -112,6 +112,7 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       window.initFirebaseSync();
+      initSwipeGesture();
     });
   </script>
 
@@ -235,8 +236,8 @@
       <img id="viewer-image" src="" alt="Full view" class="w-full h-full media-fit-contain hidden">
       <video id="viewer-video" controls class="w-full h-full media-fit-contain hidden" playsinline></video>
     </div>
-    <button onclick="prevMedia()" class="absolute left-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20"><i class="fa-solid fa-chevron-left text-2xl"></i></button>
-    <button onclick="nextMedia()" class="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20"><i class="fa-solid fa-chevron-right text-2xl"></i></button>
+    <button onclick="prevMedia()" class="absolute left-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20 hidden sm:flex"><i class="fa-solid fa-chevron-left text-2xl"></i></button>
+    <button onclick="nextMedia()" class="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20 hidden sm:flex"><i class="fa-solid fa-chevron-right text-2xl"></i></button>
     <div id="viewer-footer" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full text-white text-xs font-semibold z-20">
       <span id="viewer-index">1</span> / <span id="viewer-total">1</span>
     </div>
@@ -462,6 +463,88 @@
       if (window.currentMediaList.length === 0) return;
       window.currentViewerIndex = (window.currentViewerIndex - 1 + window.currentMediaList.length) % window.currentMediaList.length;
       updateViewerContent();
+    }
+
+    function toggleMediaFit() {
+      window.isFitContain = !window.isFitContain;
+      const imgEl = document.getElementById("viewer-image");
+      const videoEl = document.getElementById("viewer-video");
+      const fitIcon = document.getElementById("fit-icon");
+
+      if (window.isFitContain) {
+        imgEl.className = "w-full h-full media-fit-contain";
+        videoEl.className = "w-full h-full media-fit-contain";
+        fitIcon.className = "fa-solid fa-expand";
+      } else {
+        imgEl.className = "w-full h-full media-fit-cover";
+        videoEl.className = "w-full h-full media-fit-cover";
+        fitIcon.className = "fa-solid fa-compress";
+      }
+    }
+
+    // 모바일 터치 및 PC 마우스 드래그(스와이프) 제스처 구현
+    function initSwipeGesture() {
+      const container = document.getElementById("viewer-container");
+      if (!container) return;
+
+      let startX = 0;
+      let startY = 0;
+      let isDragging = false;
+      const threshold = 50; // 스와이프 인식 최소 거리 (px)
+
+      // 터치 시작 (모바일)
+      container.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 1) {
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+          isDragging = true;
+        }
+      }, { passive: true });
+
+      // 마우스 클릭 시작 (PC)
+      container.addEventListener("mousedown", (e) => {
+        startX = e.clientX;
+        startY = e.clientY;
+        isDragging = true;
+      });
+
+      // 터치 이동/종료 (모바일)
+      container.addEventListener("touchend", (e) => {
+        if (!isDragging) return;
+        const endX = e.changedTouches[0].clientX;
+        const endY = e.changedTouches[0].clientY;
+        handleSwipe(startX, startY, endX, endY, threshold);
+        isDragging = false;
+      }, { passive: true });
+
+      // 마우스 이동/종료 (PC)
+      container.addEventListener("mouseup", (e) => {
+        if (!isDragging) return;
+        const endX = e.clientX;
+        const endY = e.clientY;
+        handleSwipe(startX, startY, endX, endY, threshold);
+        isDragging = false;
+      });
+
+      container.addEventListener("mouseleave", () => {
+        isDragging = false;
+      });
+    }
+
+    function handleSwipe(startX, startY, endX, endY, threshold) {
+      const diffX = endX - startX;
+      const diffY = endY - startY;
+
+      // 수평 이동 거리가 수직 이동 거리보다 크고, 임계값을 넘었을 때만 스와이프로 인정
+      if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > threshold) {
+        if (diffX > 0) {
+          // 오른쪽으로 스와이프 -> 이전 파일
+          prevMedia();
+        } else {
+          // 왼쪽으로 스와이프 -> 다음 파일
+          nextMedia();
+        }
+      }
     }
 
     function toggleAdminModal(show) {
