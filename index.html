@@ -232,12 +232,20 @@
         </button>
       </div>
     </div>
+    
     <div class="w-full h-full flex items-center justify-center relative overflow-hidden" id="viewer-container">
       <img id="viewer-image" src="" alt="Full view" class="w-full h-full media-fit-contain hidden">
       <video id="viewer-video" controls class="w-full h-full media-fit-contain hidden" playsinline></video>
     </div>
-    <button onclick="prevMedia()" class="absolute left-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20 hidden sm:flex"><i class="fa-solid fa-chevron-left text-2xl"></i></button>
-    <button onclick="nextMedia()" class="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20 hidden sm:flex"><i class="fa-solid fa-chevron-right text-2xl"></i></button>
+
+    <!-- 좌우 이동 화살표 버튼 (모바일에서는 숨김, 태블릿/PC 이상에서 노출) -->
+    <button onclick="prevMedia()" class="absolute left-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20 hidden sm:flex cursor-pointer shadow-lg">
+      <i class="fa-solid fa-chevron-left text-2xl"></i>
+    </button>
+    <button onclick="nextMedia()" class="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20 hidden sm:flex cursor-pointer shadow-lg">
+      <i class="fa-solid fa-chevron-right text-2xl"></i>
+    </button>
+
     <div id="viewer-footer" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full text-white text-xs font-semibold z-20">
       <span id="viewer-index">1</span> / <span id="viewer-total">1</span>
     </div>
