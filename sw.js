@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jtech-v4';
+const CACHE_NAME = 'jtech-v5';
 const urlsToCache = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -27,21 +27,26 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. http나 https가 아닌 요청(chrome-extension 등)은 서비스 워커에서 가로채지 않고 패스
-  // 2. Firebase Storage 업로드/통신(POST, PUT 등) 및 외부 API 요청은 캐시에서 제외
-  if (!url.protocol.startsWith('http') || url.origin.includes('firebasestorage.googleapis.com') || event.request.method !== 'GET') {
+  // http나 https가 아닌 요청은 패스
+  if (!url.protocol.startsWith('http') || event.request.method !== 'GET') {
     return; 
   }
 
+  // Firebase Storage 이미지 및 외부 자원 캐싱 전략 (Stale-While-Revalidate)
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        const resClone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, resClone);
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cachedResponse) => {
+        const fetchPromise = fetch(event.request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            cache.put(event.request, networkResponse.clone());
+          }
+          return networkResponse;
+        }).catch(() => {
+          return cachedResponse;
         });
-        return response;
-      })
-      .catch(() => caches.match(event.request))
+
+        return cachedResponse || fetchPromise;
+      });
+    })
   );
 });
