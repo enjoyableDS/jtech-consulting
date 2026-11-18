@@ -25,6 +25,13 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Firebase Storage 업로드/통신(POST, PUT 등) 및 외부 API 요청은 캐시에서 제외
+  if (url.origin.includes('firebasestorage.googleapis.com') || event.request.method !== 'GET') {
+    return; // 캐시를 타지 않고 일반 네트워크 요청으로 바로 진행
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
