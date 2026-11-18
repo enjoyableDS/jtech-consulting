@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>JTECH 단열탄성 상담 시스템</title>
+  <title>JTECH 단열탄성 상담 시스템 (공용)</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#1b4396">
   <link rel="apple-touch-icon" href="https://via.placeholder.com/192/1b4396/ffffff?text=JTECH">
@@ -11,6 +11,155 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Font Awesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Firebase SDK (Modular v9) - Firestore 및 Storage 추가 -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAu_nhpHAOKOuozczp7dI8ywBfSg3aKfQk",
+      authDomain: "jtech-01.firebaseapp.com",
+      projectId: "jtech-01",
+      storageBucket: "jtech-01.firebasestorage.app",
+      messagingSenderId: "467197970168",
+      appId: "1:467197970168:web:1220210ce33675549f9d0d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const storage = getStorage(app);
+
+    const DEFAULT_CATEGORIES = [
+      "사업자", "인증서", "시공전", "시공후", "자재안내",
+      "시공과정", "가격표", "A/S규정", "고객후기", "기타안내"
+    ];
+
+    window.categories = [];
+    window.mediaStorage = {};
+    window.currentCategoryId = null;
+    window.currentMediaList = [];
+    window.currentViewerIndex = 0;
+    window.isFitContain = true;
+    window.currentSortOrder = "asc";
+    let isInitialized = false;
+
+    // 실시간 데이터 동기화 리스너 설정
+    window.initFirebaseSync = async function() {
+      const catSnapshot = await getDocs(collection(db, "categories"));
+      if (catSnapshot.empty) {
+        for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
+          const catId = "cat_" + Date.now() + "_" + i;
+          await setDoc(doc(db, "categories", catId), { name: DEFAULT_CATEGORIES[i], order: i });
+        }
+      }
+
+      // 1. 카테고리 실시간 동기화
+      onSnapshot(collection(db, "categories"), (snapshot) => {
+        let loadedCats = [];
+        snapshot.forEach((docSnap) => {
+          loadedCats.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        window.categories = loadedCats.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        if (!window.currentCategoryId && window.categories.length > 0) {
+          window.currentCategoryId = window.categories[0].id;
+        }
+        renderCategoryGrid();
+        if (!document.getElementById("admin-modal").classList.contains("hidden")) {
+          renderAdminCategories();
+        }
+      });
+
+      // 2. 미디어 파일 실시간 동기화
+      onSnapshot(collection(db, "media"), (snapshot) => {
+        window.mediaStorage = {};
+        window.categories.forEach(c => window.mediaStorage[c.id] = []);
+        
+        snapshot.forEach((docSnap) => {
+          const item = { id: docSnap.id, ...docSnap.data() };
+          if (!window.mediaStorage[item.categoryId]) {
+            window.mediaStorage[item.categoryId] = [];
+          }
+          window.mediaStorage[item.categoryId].push(item);
+        });
+
+        renderCategoryGrid();
+        if (window.currentCategoryId) {
+          if (!document.getElementById("view-gallery").classList.contains("hidden")) {
+            openCategory(window.currentCategoryId);
+          }
+          if (!document.getElementById("admin-modal").classList.contains("hidden")) {
+            renderAdminMediaGrid();
+          }
+        }
+      });
+    };
+
+    window.dbOps = {
+      saveCategory: async (id, data) => {
+        await setDoc(doc(db, "categories", id), data, { merge: true });
+      },
+      deleteCategory: async (id) => {
+        await deleteDoc(doc(db, "categories", id));
+      },
+      saveMedia: async (id, data) => {
+        await setDoc(doc(db, "media", id), data, { merge: true });
+      },
+      deleteMedia: async (item) => {
+        // 1. Firebase Storage에서 실제 파일 삭제 시도
+        if (item.storagePath) {
+          try {
+            const fileRef = ref(storage, item.storagePath);
+            await deleteObject(fileRef);
+          } catch (err) {
+            console.warn("Storage 파일 삭제 실패 또는 이미 없음:", err);
+          }
+        }
+        // 2. Firestore DB 문서 삭제
+        await deleteDoc(doc(db, "media", item.id));
+      }
+    };
+
+    // 파일 업로드 핸들러 (Firebase Storage 원본 업로드)
+    window.handleFileUpload = async function(event) {
+      const fileList = event.target.files;
+      if (!fileList || fileList.length === 0 || !window.currentCategoryId) return;
+
+      const validFiles = Array.from(fileList).filter(f => f.type && (f.type.startsWith("image/") || f.type.startsWith("video/")));
+      if (validFiles.length === 0) { event.target.value = ""; return; }
+
+      const baseTime = Date.now();
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        const mediaId = "media_" + baseTime + "_" + i + "_" + Math.random().toString(36).substr(2, 5);
+        const storagePath = `media/${mediaId}_${file.name}`;
+        
+        // Storage 참조 생성 및 원본 업로드
+        const storageRef = ref(storage, storagePath);
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadUrl = await getDownloadURL(snapshot.ref);
+
+        const mediaObj = {
+          categoryId: window.currentCategoryId,
+          name: file.name,
+          type: file.type,
+          dataUrl: downloadUrl, // Storage 다운로드 링크 저장
+          storagePath: storagePath, // 나중에 파일 삭제 시 활용
+          createdAt: baseTime + i
+        };
+        await window.dbOps.saveMedia(mediaId, mediaObj);
+      }
+      event.target.value = "";
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      window.initFirebaseSync();
+      initSwipeGesture();
+    });
+  </script>
+
   <script>
     tailwind.config = {
       theme: {
@@ -26,43 +175,17 @@
   </script>
   <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-    }
-    body {
-      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    .custom-scrollbar {
-      -webkit-overflow-scrolling: touch;
-      touch-action: pan-y;
-      overscroll-behavior-y: contain;
-    }
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: #f1f5f9;
-      border-radius: 9999px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background-color: #94a3b8;
-      border-radius: 9999px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-      background-color: #64748b;
-    }
-    .media-fit-contain {
-      object-fit: contain;
-    }
-    .media-fit-cover {
-      object-fit: cover;
-    }
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; user-select: none; -webkit-user-select: none; }
+    
+    .custom-scrollbar {-webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; overscroll-behavior-x: contain;}
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 9999px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 9999px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+    
+    .media-fit-contain { object-fit: contain; }
+    .media-fit-cover { object-fit: cover; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-800 h-screen h-[100dvh] flex flex-col overflow-hidden">
@@ -92,15 +215,13 @@
       </div>
     </div>
 
-    <!-- TOP CATEGORY MENU BAR -->
-    <nav id="top-category-bar" class="flex items-center justify-center gap-2 overflow-x-auto custom-scrollbar pb-1 pt-1 border-t border-gray-100">
-      <!-- 동적으로 카테고리 칩 버튼들이 생성됩니다 -->
+    <nav id="top-category-bar" class="overflow-x-auto custom-scrollbar pb-2 pt-1 border-t border-gray-100 w-full whitespace-nowrap px-1">
+      <div id="top-category-inner" class="flex items-center justify-start sm:justify-center gap-2 min-w-max mx-auto"></div>
     </nav>
   </header>
 
   <!-- MAIN VIEW CONTAINER -->
   <main class="flex-1 min-h-0 relative overflow-y-auto custom-scrollbar p-6">
-
     <!-- 1. CATEGORY GRID VIEW -->
     <div id="view-categories" class="max-w-7xl mx-auto min-h-full flex flex-col justify-center py-2">
       <div id="category-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5 my-auto pb-6">
@@ -128,19 +249,13 @@
           </button>
         </div>
       </div>
-
-      <div id="gallery-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 pb-8">
-      </div>
-
+      <div id="gallery-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 pb-8"></div>
       <div id="gallery-empty" class="hidden flex-col items-center justify-center py-20 text-center">
         <i class="fa-regular fa-folder-open text-6xl text-gray-300 mb-3"></i>
         <p class="text-gray-500 font-medium">등록된 사진이나 동영상이 없습니다.</p>
-        <button onclick="openCategoryAdminFromGallery()" class="mt-4 px-4 py-2 bg-brand text-white text-sm font-semibold rounded-lg shadow">
-          + 파일 추가하기
-        </button>
+        <button onclick="openCategoryAdminFromGallery()" class="mt-4 px-4 py-2 bg-brand text-white text-sm font-semibold rounded-lg shadow">+ 파일 추가하기</button>
       </div>
     </div>
-
   </main>
 
   <!-- 3. FULLSCREEN MEDIA VIEWER MODAL -->
@@ -159,16 +274,16 @@
         </button>
       </div>
     </div>
-
+    
     <div class="w-full h-full flex items-center justify-center relative overflow-hidden" id="viewer-container">
       <img id="viewer-image" src="" alt="Full view" class="w-full h-full media-fit-contain hidden">
       <video id="viewer-video" controls class="w-full h-full media-fit-contain hidden" playsinline></video>
     </div>
 
-    <button onclick="prevMedia()" class="absolute left-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20">
+    <button onclick="prevMedia()" class="absolute left-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20 hidden sm:flex cursor-pointer shadow-lg">
       <i class="fa-solid fa-chevron-left text-2xl"></i>
     </button>
-    <button onclick="nextMedia()" class="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20">
+    <button onclick="nextMedia()" class="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md z-20 transition border border-white/20 hidden sm:flex cursor-pointer shadow-lg">
       <i class="fa-solid fa-chevron-right text-2xl"></i>
     </button>
 
@@ -180,29 +295,21 @@
   <!-- 4. ADMIN & MEDIA MANAGEMENT MODAL -->
   <div id="admin-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 hidden flex items-center justify-center p-4">
     <div class="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-
       <div class="px-6 py-4 bg-brand text-white flex justify-between items-center shrink-0">
         <div class="flex items-center gap-2">
           <i class="fa-solid fa-sliders text-xl"></i>
-          <h3 class="text-lg font-bold">카테고리 및 미디어 콘텐츠 관리자</h3>
+          <h3 class="text-lg font-bold">카테고리 및 미디어 콘텐츠 관리자 (공용 동기화)</h3>
         </div>
-        <button onclick="toggleAdminModal(false)" class="text-white/80 hover:text-white text-xl">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
+        <button onclick="toggleAdminModal(false)" class="text-white/80 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
       </div>
-
       <div class="flex-1 min-h-0 overflow-hidden grid grid-cols-1 md:grid-cols-3">
         <div class="p-4 border-r border-gray-200 flex flex-col bg-gray-50 min-h-0 h-full">
           <div class="flex justify-between items-center mb-3 shrink-0">
             <h4 class="font-bold text-gray-700 text-sm">카테고리 목록 (<span id="cat-count">0</span>)</h4>
-            <button onclick="addNewCategoryPrompt()" class="text-xs bg-brand text-white px-2.5 py-1 rounded hover:bg-brandDark font-semibold">
-              + 항목 추가
-            </button>
+            <button onclick="addNewCategoryPrompt()" class="text-xs bg-brand text-white px-2.5 py-1 rounded hover:bg-brandDark font-semibold">+ 항목 추가</button>
           </div>
-          <div id="admin-category-list" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-1.5 pr-1">
-          </div>
+          <div id="admin-category-list" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-1.5 pr-1"></div>
         </div>
-
         <div class="md:col-span-2 p-5 flex flex-col min-h-0 h-full bg-white overflow-y-auto custom-scrollbar">
           <div class="flex justify-between items-center pb-3 border-b border-gray-200 mb-4 shrink-0">
             <div>
@@ -210,86 +317,40 @@
               <h4 id="admin-selected-cat-title" class="text-xl font-bold text-gray-800">카테고리를 선택하세요</h4>
             </div>
             <div class="flex gap-2">
-              <button onclick="renameSelectedCategory()" class="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold">
-                이름 변경
-              </button>
-              <button onclick="deleteSelectedCategory()" class="px-3 py-1.5 text-xs bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold">
-                카테고리 삭제
-              </button>
+              <button onclick="renameSelectedCategory()" class="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold">이름 변경</button>
+              <button onclick="deleteSelectedCategory()" class="px-3 py-1.5 text-xs bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold">카테고리 삭제</button>
             </div>
           </div>
-
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 shrink-0">
             <label class="border-2 border-dashed border-gray-300 hover:border-brand rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-gray-50 hover:bg-brandLight/30 transition text-center">
               <i class="fa-solid fa-cloud-arrow-up text-2xl text-brand mb-1.5"></i>
               <span class="text-sm font-bold text-gray-700">사진/동영상 파일 선택</span>
-              <span class="text-[11px] text-gray-400 mt-0.5">개별 또는 다중 파일 선택</span>
               <input type="file" id="media-file-input" multiple accept="image/*,video/*" class="hidden" onchange="handleFileUpload(event)">
             </label>
-
             <label class="border-2 border-dashed border-brand/40 hover:border-brand rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer bg-brandLight/20 hover:bg-brandLight/50 transition text-center">
               <i class="fa-solid fa-folder-plus text-2xl text-brand mb-1.5"></i>
               <span class="text-sm font-bold text-brand">폴더 통째로 가져오기</span>
-              <span class="text-[11px] text-gray-500 mt-0.5">폴더 내 미디어 이름순 일괄 등록</span>
               <input type="file" id="media-folder-input" webkitdirectory directory multiple class="hidden" onchange="handleFileUpload(event)">
             </label>
           </div>
-
-          <div class="flex items-center justify-between mb-2 shrink-0">
-            <h5 class="text-xs font-bold text-gray-500">등록된 미디어 파일 목록</h5>
-            <div class="flex items-center gap-1.5">
-              <span class="text-[11px] text-gray-400 font-semibold">정렬 기준:</span>
-              <select id="admin-sort-select" onchange="changeSortOrder(this.value)" class="text-xs font-bold text-brand bg-brandLight px-2 py-1 rounded border border-brand/20 focus:outline-none cursor-pointer">
-                <option value="asc">이름 오름차순 (기본)</option>
-                <option value="desc">이름 내림차순</option>
-                <option value="created">등록순</option>
-              </select>
-            </div>
-          </div>
-
-          <div id="admin-media-grid" class="grid grid-cols-3 sm:grid-cols-4 gap-3 pb-6">
-          </div>
+          <div id="admin-media-grid" class="grid grid-cols-3 sm:grid-cols-4 gap-3 pb-6"></div>
         </div>
       </div>
-
       <div class="px-6 py-3 bg-gray-100 border-t border-gray-200 flex justify-between items-center text-xs text-gray-500 shrink-0">
-        <span>* 저장된 파일은 기기 내부 저장소(IndexedDB)에 안전하게 유지되며 기본 이름 오름차순으로 정렬됩니다.</span>
-        <button onclick="toggleAdminModal(false)" class="px-5 py-2 bg-brand text-white font-bold rounded-lg hover:bg-brandDark transition">
-          완료 및 닫기
-        </button>
+        <span>* 클라우드 DB 연동으로 접속한 모든 기기에서 실시간 동기화됩니다.</span>
+        <button onclick="toggleAdminModal(false)" class="px-5 py-2 bg-brand text-white font-bold rounded-lg hover:bg-brandDark transition">완료 및 닫기</button>
       </div>
     </div>
   </div>
 
-  <!-- JAVASCRIPT LOGIC -->
+  <!-- CLIENT LOGIC -->
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-          .then(reg => console.log('Service Worker Registered', reg))
-          .catch(err => console.log('Service Worker Error', err));
-      });
-    }
-
-    const DEFAULT_CATEGORIES = [
-      "사업자", "인증서", "시공전", "시공후", "자재안내",
-      "시공과정", "가격표", "A/S규정", "고객후기", "기타안내"
-    ];
-
-    let categories = [];
-    let mediaStorage = {};
-    let currentCategoryId = null;
-    let currentMediaList = [];
-    let currentViewerIndex = 0;
-    let isFitContain = true;
-    let currentSortOrder = "asc";
-
     function sortMediaArray(items) {
       if (!items || !Array.isArray(items)) return [];
       const copy = [...items];
-      if (currentSortOrder === "asc") {
+      if (window.currentSortOrder === "asc") {
         return copy.sort((a, b) => (a.name || "").localeCompare(b.name || "", "ko", { numeric: true, sensitivity: "base" }));
-      } else if (currentSortOrder === "desc") {
+      } else if (window.currentSortOrder === "desc") {
         return copy.sort((a, b) => (b.name || "").localeCompare(a.name || "", "ko", { numeric: true, sensitivity: "base" }));
       } else {
         return copy.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -297,15 +358,10 @@
     }
 
     function changeSortOrder(order) {
-      currentSortOrder = order;
-      const gallerySelect = document.getElementById("gallery-sort-select");
-      const adminSelect = document.getElementById("admin-sort-select");
-      if (gallerySelect) gallerySelect.value = order;
-      if (adminSelect) adminSelect.value = order;
-
-      if (currentCategoryId) {
+      window.currentSortOrder = order;
+      if (window.currentCategoryId) {
         if (!document.getElementById("view-gallery").classList.contains("hidden")) {
-          openCategory(currentCategoryId);
+          openCategory(window.currentCategoryId);
         }
         if (!document.getElementById("admin-modal").classList.contains("hidden")) {
           renderAdminMediaGrid();
@@ -313,163 +369,52 @@
       }
     }
 
-    const DB_NAME = "JTechConsultationDB";
-    const DB_VERSION = 1;
-    let db = null;
+    function renderCategoryGrid() {
+      renderTopCategoryBar();
+      const grid = document.getElementById("category-grid");
+      if (!grid) return;
+      grid.innerHTML = "";
 
-    function initDB() {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        request.onupgradeneeded = (e) => {
-          const database = e.target.result;
-          if (!database.objectStoreNames.contains("categories")) {
-            database.createObjectStore("categories", { keyPath: "id" });
-          }
-          if (!database.objectStoreNames.contains("media")) {
-            database.createObjectStore("media", { keyPath: "id" });
-          }
-        };
-        request.onsuccess = (e) => {
-          db = e.target.result;
-          resolve(db);
-        };
-        request.onerror = (e) => reject(e);
-      });
-    }
-
-    async function loadDataFromDB() {
-      await initDB();
-
-      const catTransaction = db.transaction("categories", "readonly");
-      const catStore = catTransaction.objectStore("categories");
-      const catRequest = catStore.getAll();
-
-      catRequest.onsuccess = async () => {
-        let loadedCats = catRequest.result;
-        if (!loadedCats || loadedCats.length === 0) {
-          categories = DEFAULT_CATEGORIES.map((name, index) => ({
-            id: "cat_" + Date.now() + "_" + index,
-            name: name,
-            order: index
-          }));
-          await saveAllCategories();
-        } else {
-          categories = loadedCats.sort((a, b) => a.order - b.order);
-        }
-
-        const mediaTransaction = db.transaction("media", "readonly");
-        const mediaStore = mediaTransaction.objectStore("media");
-        const mediaRequest = mediaStore.getAll();
-
-        mediaRequest.onsuccess = () => {
-          const allMedia = mediaRequest.result || [];
-          mediaStorage = {};
-          categories.forEach(c => mediaStorage[c.id] = []);
-          allMedia.forEach(item => {
-            if (mediaStorage[item.categoryId]) {
-              mediaStorage[item.categoryId].push(item);
-            }
-          });
-          renderCategoryGrid();
-          renderTopCategoryBar();
-        };
-      };
-    }
-
-    function saveAllCategories() {
-      return new Promise((resolve) => {
-        const tx = db.transaction("categories", "readwrite");
-        const store = tx.objectStore("categories");
-        store.clear();
-        categories.forEach(cat => store.put(cat));
-        tx.oncomplete = () => resolve();
-      });
-    }
-
-    function saveMediaItem(item) {
-      return new Promise((resolve) => {
-        const tx = db.transaction("media", "readwrite");
-        const store = tx.objectStore("media");
-        store.put(item);
-        tx.oncomplete = () => resolve();
-      });
-    }
-
-    function deleteMediaItemFromDB(id) {
-      return new Promise((resolve) => {
-        const tx = db.transaction("media", "readwrite");
-        const store = tx.objectStore("media");
-        store.delete(id);
-        tx.oncomplete = () => resolve();
+      window.categories.forEach(cat => {
+        const items = window.mediaStorage[cat.id] || [];
+        const card = document.createElement("div");
+        card.className = "group relative bg-white border-[3px] border-brand rounded-2xl aspect-square flex flex-col items-center justify-center p-4 cursor-pointer hover:bg-brandLight/50 hover:shadow-xl transition-all duration-200 active:scale-95";
+        card.onclick = () => openCategory(cat.id);
+        card.innerHTML = `
+          <span class="text-xl sm:text-2xl font-black text-brand text-center group-hover:scale-105 transition-transform duration-200 leading-tight">${cat.name}</span>
+          ${items.length > 0 ? `<span class="absolute bottom-3 right-3 text-[11px] font-bold bg-brand text-white px-2 py-0.5 rounded-full">${items.length}</span>` : ''}
+        `;
+        grid.appendChild(card);
       });
     }
 
     function renderTopCategoryBar() {
-      const topBar = document.getElementById("top-category-bar");
-      topBar.innerHTML = "";
+      const topBarInner = document.getElementById("top-category-inner");
+      if (!topBarInner) return;
+      topBarInner.innerHTML = "";
 
-      categories.forEach(cat => {
-        const isSelected = currentCategoryId === cat.id;
+      window.categories.forEach(cat => {
+        const isSelected = window.currentCategoryId === cat.id;
         const btn = document.createElement("button");
-        btn.className = `whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
-          isSelected 
-            ? 'bg-brand text-white shadow-sm' 
-            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-        }`;
+        btn.className = `whitespace-nowrap px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${isSelected ? 'bg-brand text-white shadow-sm' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`;
         btn.onclick = () => openCategory(cat.id);
-        
-        const count = (mediaStorage[cat.id] || []).length;
-        btn.innerHTML = `
-          <span>${cat.name}</span>
-          <span class="text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'}">${count}</span>
-        `;
-        topBar.appendChild(btn);
+        const count = (window.mediaStorage[cat.id] || []).length;
+        btn.innerHTML = `<span>${cat.name}</span><span class="text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'}">${count}</span>`;
+        topBarInner.appendChild(btn);
       });
-    }
-
-    function renderCategoryGrid() {
-      renderTopCategoryBar();
-      const grid = document.getElementById("category-grid");
-      grid.innerHTML = "";
-
-      categories.forEach(cat => {
-        const items = mediaStorage[cat.id] || [];
-        const card = document.createElement("div");
-        card.className = "group relative bg-white border-[3px] border-brand rounded-2xl aspect-square flex flex-col items-center justify-center p-4 cursor-pointer hover:bg-brandLight/50 hover:shadow-xl transition-all duration-200 active:scale-95";
-        card.onclick = () => openCategory(cat.id);
-
-        card.innerHTML = `
-          <span class="text-xl sm:text-2xl font-black text-brand text-center group-hover:scale-105 transition-transform duration-200 leading-tight">
-            ${cat.name}
-          </span>
-          ${items.length > 0 ? `
-            <span class="absolute bottom-3 right-3 text-[11px] font-bold bg-brand text-white px-2 py-0.5 rounded-full">
-              ${items.length}
-            </span>
-          ` : ''}
-        `;
-        grid.appendChild(card);
-      });
-
-      document.getElementById("view-categories").classList.remove("hidden");
-      document.getElementById("view-gallery").classList.add("hidden");
-      document.getElementById("btn-home").classList.add("hidden");
-      document.getElementById("header-title").innerHTML = `<span>고객 상담 카탈로그</span>`;
     }
 
     function openCategory(catId) {
-      currentCategoryId = catId;
+      window.currentCategoryId = catId;
       renderTopCategoryBar();
-      const category = categories.find(c => c.id === catId);
+      const category = window.categories.find(c => c.id === catId);
       if (!category) return;
 
-      const rawItems = mediaStorage[catId] || [];
+      const rawItems = window.mediaStorage[catId] || [];
       const items = sortMediaArray(rawItems);
 
       document.getElementById("current-category-name").innerText = category.name;
       document.getElementById("current-category-count").innerText = `총 ${items.length}개의 미디어 파일`;
-      
-      // 수정된 부분: '카테고리 >' 문구를 제거하고 현재 선택된 메뉴명만 출력
       document.getElementById("header-title").innerHTML = `<span class="text-brand">${category.name}</span>`;
 
       const galleryGrid = document.getElementById("gallery-grid");
@@ -490,26 +435,15 @@
           card.className = "bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md cursor-pointer aspect-square relative group";
           card.onclick = () => openViewer(idx);
 
-          if (item.type.startsWith("image/")) {
+          if (item.type && item.type.startsWith("image/")) {
             card.innerHTML = `
               <img src="${item.dataUrl}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="${item.name}">
-              <div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
-                <i class="fa-solid fa-magnifying-glass-plus text-2xl"></i>
-              </div>
-              <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                <p class="text-[11px] text-white font-medium truncate">${item.name}</p>
-              </div>
+              <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-2"><p class="text-[11px] text-white font-medium truncate">${item.name}</p></div>
             `;
           } else {
             card.innerHTML = `
               <video src="${item.dataUrl}" class="w-full h-full object-cover"></video>
-              <div class="absolute inset-0 bg-black/40 flex items-center justify-center text-white">
-                <i class="fa-solid fa-circle-play text-4xl group-hover:scale-110 transition"></i>
-              </div>
-              <span class="absolute top-2 left-2 text-[10px] bg-black/70 text-white px-2 py-0.5 rounded-full font-bold">동영상</span>
-              <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                <p class="text-[11px] text-white font-medium truncate">${item.name}</p>
-              </div>
+              <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-2"><p class="text-[11px] text-white font-medium truncate">${item.name}</p></div>
             `;
           }
           galleryGrid.appendChild(card);
@@ -522,38 +456,35 @@
     }
 
     function goHome() {
-      currentCategoryId = null;
+      window.currentCategoryId = null;
       renderCategoryGrid();
+      document.getElementById("view-categories").classList.remove("hidden");
+      document.getElementById("view-gallery").classList.add("hidden");
+      document.getElementById("btn-home").classList.add("hidden");
+      document.getElementById("header-title").innerHTML = `<span>고객 상담 카탈로그</span>`;
     }
 
     function openViewer(index) {
-      if (!currentCategoryId) return;
-      currentMediaList = sortMediaArray(mediaStorage[currentCategoryId] || []);
-      if (currentMediaList.length === 0) return;
-
-      currentViewerIndex = index;
-      const modal = document.getElementById("viewer-modal");
-      modal.classList.remove("hidden");
-
+      if (!window.currentCategoryId) return;
+      window.currentMediaList = sortMediaArray(window.mediaStorage[window.currentCategoryId] || []);
+      if (window.currentMediaList.length === 0) return;
+      window.currentViewerIndex = index;
+      document.getElementById("viewer-modal").classList.remove("hidden");
       updateViewerContent();
     }
 
     function updateViewerContent() {
-      const item = currentMediaList[currentViewerIndex];
-      const category = categories.find(c => c.id === currentCategoryId);
-
+      const item = window.currentMediaList[window.currentViewerIndex];
+      const category = window.categories.find(c => c.id === window.currentCategoryId);
       document.getElementById("viewer-category-tag").innerText = category ? category.name : "";
       document.getElementById("viewer-title").innerText = item.name;
-      document.getElementById("viewer-index").innerText = currentViewerIndex + 1;
-      document.getElementById("viewer-total").innerText = currentMediaList.length;
+      document.getElementById("viewer-index").innerText = window.currentViewerIndex + 1;
+      document.getElementById("viewer-total").innerText = window.currentMediaList.length;
 
       const imgEl = document.getElementById("viewer-image");
       const videoEl = document.getElementById("viewer-video");
 
-      imgEl.className = `w-full h-full ${isFitContain ? 'media-fit-contain' : 'media-fit-cover'}`;
-      videoEl.className = `w-full h-full ${isFitContain ? 'media-fit-contain' : 'media-fit-cover'}`;
-
-      if (item.type.startsWith("image/")) {
+      if (item.type && item.type.startsWith("image/")) {
         videoEl.pause();
         videoEl.classList.add("hidden");
         imgEl.src = item.dataUrl;
@@ -567,50 +498,94 @@
     }
 
     function closeViewer() {
-      const videoEl = document.getElementById("viewer-video");
-      videoEl.pause();
+      document.getElementById("viewer-video").pause();
       document.getElementById("viewer-modal").classList.add("hidden");
     }
 
     function nextMedia() {
-      if (currentMediaList.length === 0) return;
-      currentViewerIndex = (currentViewerIndex + 1) % currentMediaList.length;
+      if (window.currentMediaList.length === 0) return;
+      window.currentViewerIndex = (window.currentViewerIndex + 1) % window.currentMediaList.length;
       updateViewerContent();
     }
 
     function prevMedia() {
-      if (currentMediaList.length === 0) return;
-      currentViewerIndex = (currentViewerIndex - 1 + currentMediaList.length) % currentMediaList.length;
+      if (window.currentMediaList.length === 0) return;
+      window.currentViewerIndex = (window.currentViewerIndex - 1 + window.currentMediaList.length) % window.currentMediaList.length;
       updateViewerContent();
     }
 
     function toggleMediaFit() {
-      isFitContain = !isFitContain;
+      window.isFitContain = !window.isFitContain;
+      const imgEl = document.getElementById("viewer-image");
+      const videoEl = document.getElementById("viewer-video");
       const fitIcon = document.getElementById("fit-icon");
-      if (isFitContain) {
+
+      if (window.isFitContain) {
+        imgEl.className = "w-full h-full media-fit-contain";
+        videoEl.className = "w-full h-full media-fit-contain";
         fitIcon.className = "fa-solid fa-expand";
       } else {
+        imgEl.className = "w-full h-full media-fit-cover";
+        videoEl.className = "w-full h-full media-fit-cover";
         fitIcon.className = "fa-solid fa-compress";
       }
-      updateViewerContent();
     }
 
-    let touchStartX = 0;
-    let touchEndX = 0;
-    const viewerContainer = document.getElementById("viewer-container");
+    function initSwipeGesture() {
+      const container = document.getElementById("viewer-container");
+      if (!container) return;
 
-    viewerContainer.addEventListener("touchstart", (e) => {
-      touchStartX = e.changedTouches[0].screenX;
-    }, false);
+      let startX = 0;
+      let startY = 0;
+      let isDragging = false;
+      const threshold = 50;
 
-    viewerContainer.addEventListener("touchend", (e) => {
-      touchEndX = e.changedTouches[0].screenX;
-      handleSwipe();
-    }, false);
+      container.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 1) {
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+          isDragging = true;
+        }
+      }, { passive: true });
 
-    function handleSwipe() {
-      if (touchEndX < touchStartX - 50) nextMedia();
-      if (touchEndX > touchStartX + 50) prevMedia();
+      container.addEventListener("mousedown", (e) => {
+        startX = e.clientX;
+        startY = e.clientY;
+        isDragging = true;
+      });
+
+      container.addEventListener("touchend", (e) => {
+        if (!isDragging) return;
+        const endX = e.changedTouches[0].clientX;
+        const endY = e.changedTouches[0].clientY;
+        handleSwipe(startX, startY, endX, endY, threshold);
+        isDragging = false;
+      }, { passive: true });
+
+      container.addEventListener("mouseup", (e) => {
+        if (!isDragging) return;
+        const endX = e.clientX;
+        const endY = e.clientY;
+        handleSwipe(startX, startY, endX, endY, threshold);
+        isDragging = false;
+      });
+
+      container.addEventListener("mouseleave", () => {
+        isDragging = false;
+      });
+    }
+
+    function handleSwipe(startX, startY, endX, endY, threshold) {
+      const diffX = endX - startX;
+      const diffY = endY - startY;
+
+      if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > threshold) {
+        if (diffX > 0) {
+          prevMedia();
+        } else {
+          nextMedia();
+        }
+      }
     }
 
     function toggleAdminModal(show) {
@@ -620,49 +595,36 @@
         modal.classList.remove("hidden");
       } else {
         modal.classList.add("hidden");
-        if (currentCategoryId) {
-          openCategory(currentCategoryId);
+        if (window.currentCategoryId) {
+          openCategory(window.currentCategoryId);
         } else {
-          renderCategoryGrid();
+          goHome();
         }
       }
     }
 
     function renderAdminCategories() {
       const catList = document.getElementById("admin-category-list");
-      document.getElementById("cat-count").innerText = categories.length;
+      document.getElementById("cat-count").innerText = window.categories.length;
       catList.innerHTML = "";
 
-      if (!currentCategoryId && categories.length > 0) {
-        currentCategoryId = categories[0].id;
+      if (!window.currentCategoryId && window.categories.length > 0) {
+        window.currentCategoryId = window.categories[0].id;
       }
 
-      categories.forEach(cat => {
-        const isSelected = cat.id === currentCategoryId;
+      window.categories.forEach(cat => {
+        const isSelected = cat.id === window.currentCategoryId;
         const btn = document.createElement("button");
-        btn.className = `w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold flex justify-between items-center transition ${
-          isSelected ? 'bg-brand text-white shadow-sm' : 'bg-white text-gray-700 hover:bg-gray-200 border border-gray-200'
-        }`;
-        btn.onclick = () => selectAdminCategory(cat.id);
-        btn.innerHTML = `
-          <span class="truncate">${cat.name}</span>
-          <span class="text-[10px] opacity-80 bg-black/10 px-1.5 py-0.5 rounded">
-            ${(mediaStorage[cat.id] || []).length}개
-          </span>
-        `;
+        btn.className = `w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold flex justify-between items-center transition ${isSelected ? 'bg-brand text-white shadow-sm' : 'bg-white text-gray-700 hover:bg-gray-200 border border-gray-200'}`;
+        btn.onclick = () => { window.currentCategoryId = cat.id; renderAdminCategories(); };
+        btn.innerHTML = `<span class="truncate">${cat.name}</span><span class="text-[10px] opacity-80 bg-black/10 px-1.5 py-0.5 rounded">${(window.mediaStorage[cat.id] || []).length}개</span>`;
         catList.appendChild(btn);
       });
-
       renderAdminMediaGrid();
     }
 
-    function selectAdminCategory(catId) {
-      currentCategoryId = catId;
-      renderAdminCategories();
-    }
-
     function renderAdminMediaGrid() {
-      const category = categories.find(c => c.id === currentCategoryId);
+      const category = window.categories.find(c => c.id === window.currentCategoryId);
       const titleEl = document.getElementById("admin-selected-cat-title");
       const grid = document.getElementById("admin-media-grid");
 
@@ -673,27 +635,17 @@
       }
 
       titleEl.innerText = category.name;
-      const items = sortMediaArray(mediaStorage[currentCategoryId] || []);
+      const items = sortMediaArray(window.mediaStorage[window.currentCategoryId] || []);
       grid.innerHTML = "";
 
       items.forEach(item => {
         const itemCard = document.createElement("div");
         itemCard.className = "relative aspect-square border border-gray-200 rounded-lg overflow-hidden group bg-black";
 
-        if (item.type.startsWith("image/")) {
-          itemCard.innerHTML = `
-            <img src="${item.dataUrl}" class="w-full h-full object-cover">
-            <div class="absolute bottom-0 inset-x-0 bg-black/70 px-1.5 py-1">
-              <p class="text-[10px] text-white truncate">${item.name}</p>
-            </div>
-          `;
+        if (item.type && item.type.startsWith("image/")) {
+          itemCard.innerHTML = `<img src="${item.dataUrl}" class="w-full h-full object-cover"><div class="absolute bottom-0 inset-x-0 bg-black/70 px-1.5 py-1"><p class="text-[10px] text-white truncate">${item.name}</p></div>`;
         } else {
-          itemCard.innerHTML = `
-            <video src="${item.dataUrl}" class="w-full h-full object-cover"></video>
-            <div class="absolute bottom-0 inset-x-0 bg-black/70 px-1.5 py-1">
-              <p class="text-[10px] text-white truncate">${item.name}</p>
-            </div>
-          `;
+          itemCard.innerHTML = `<video src="${item.dataUrl}" class="w-full h-full object-cover"></video><div class="absolute bottom-0 inset-x-0 bg-black/70 px-1.5 py-1"><p class="text-[10px] text-white truncate">${item.name}</p></div>`;
         }
 
         const delBtn = document.createElement("button");
@@ -701,10 +653,7 @@
         delBtn.innerHTML = `<i class="fa-solid fa-xmark"></i>`;
         delBtn.onclick = async (e) => {
           e.stopPropagation();
-          await deleteMediaItemFromDB(item.id);
-          mediaStorage[currentCategoryId] = mediaStorage[currentCategoryId].filter(m => m.id !== item.id);
-          renderAdminCategories();
-          renderTopCategoryBar();
+          await window.dbOps.deleteMedia(item);
         };
 
         itemCard.appendChild(delBtn);
@@ -712,113 +661,46 @@
       });
     }
 
-    function readFileAsDataURL(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = (err) => reject(err);
-        reader.readAsDataURL(file);
-      });
-    }
-
-    async function handleFileUpload(event) {
-      const fileList = event.target.files;
-      if (!fileList || fileList.length === 0 || !currentCategoryId) return;
-
-      const validFiles = Array.from(fileList).filter(
-        f => f.type && (f.type.startsWith("image/") || f.type.startsWith("video/"))
-      );
-
-      if (validFiles.length === 0) {
-        event.target.value = "";
-        return;
-      }
-
-      validFiles.sort((a, b) => a.name.localeCompare(b.name, "ko", { numeric: true, sensitivity: "base" }));
-
-      const baseTime = Date.now();
-      for (let i = 0; i < validFiles.length; i++) {
-        const file = validFiles[i];
-        const dataUrl = await readFileAsDataURL(file);
-        const mediaObj = {
-          id: "media_" + baseTime + "_" + i + "_" + Math.random().toString(36).substr(2, 5),
-          categoryId: currentCategoryId,
-          name: file.name,
-          type: file.type,
-          dataUrl: dataUrl,
-          createdAt: baseTime + i
-        };
-        await saveMediaItem(mediaObj);
-        if (!mediaStorage[currentCategoryId]) mediaStorage[currentCategoryId] = [];
-        mediaStorage[currentCategoryId].push(mediaObj);
-      }
-
-      renderAdminCategories();
-      renderTopCategoryBar();
-      event.target.value = "";
-    }
-
     async function addNewCategoryPrompt() {
       const name = prompt("새 카테고리 이름을 입력하세요:");
       if (name && name.trim()) {
+        const catId = "cat_" + Date.now();
         const newCat = {
-          id: "cat_" + Date.now(),
           name: name.trim(),
-          order: categories.length
+          order: window.categories.length
         };
-        categories.push(newCat);
-        mediaStorage[newCat.id] = [];
-        await saveAllCategories();
-        currentCategoryId = newCat.id;
-        renderAdminCategories();
-        renderTopCategoryBar();
+        await window.dbOps.saveCategory(catId, newCat);
+        window.currentCategoryId = catId;
       }
     }
 
     async function renameSelectedCategory() {
-      const category = categories.find(c => c.id === currentCategoryId);
+      const category = window.categories.find(c => c.id === window.currentCategoryId);
       if (!category) return;
       const newName = prompt("카테고리 이름 수정:", category.name);
       if (newName && newName.trim()) {
         category.name = newName.trim();
-        await saveAllCategories();
-        renderAdminCategories();
-        renderTopCategoryBar();
+        await window.dbOps.saveCategory(category.id, { name: category.name, order: category.order });
       }
     }
 
     async function deleteSelectedCategory() {
-      if (!currentCategoryId) return;
+      if (!window.currentCategoryId) return;
       if (confirm("이 카테고리와 내부의 모든 미디어 파일이 삭제됩니다. 계속하시겠습니까?")) {
-        const items = mediaStorage[currentCategoryId] || [];
+        const catId = window.currentCategoryId;
+        const items = window.mediaStorage[catId] || [];
         for (let item of items) {
-          await deleteMediaItemFromDB(item.id);
+          await window.dbOps.deleteMedia(item);
         }
-        delete mediaStorage[currentCategoryId];
-        categories = categories.filter(c => c.id !== currentCategoryId);
-        await saveAllCategories();
-        currentCategoryId = categories.length > 0 ? categories[0].id : null;
+        await window.dbOps.deleteCategory(catId);
+        window.currentCategoryId = window.categories.length > 0 ? window.categories[0].id : null;
         renderAdminCategories();
-        renderTopCategoryBar();
       }
     }
 
     function openCategoryAdminFromGallery() {
       toggleAdminModal(true);
     }
-
-    document.addEventListener("keydown", (e) => {
-      const modal = document.getElementById("viewer-modal");
-      if (!modal.classList.contains("hidden")) {
-        if (e.key === "ArrowRight") nextMedia();
-        if (e.key === "ArrowLeft") prevMedia();
-        if (e.key === "Escape") closeViewer();
-      }
-    });
-
-    window.onload = () => {
-      loadDataFromDB();
-    };
   </script>
 </body>
 </html>
